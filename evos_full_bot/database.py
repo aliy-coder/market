@@ -47,7 +47,6 @@ class Database:
 ##################################
 
 # lesson-4 ####################
-
     def get_product_for_cart(self, product_id):
         self.cur.execute(
             """select product.*, category.name_uz as cat_name_uz, category.name_ru as cat_name_ru 
@@ -73,6 +72,7 @@ class Database:
                 (int(key), last_order,  int(val), datetime.now())
             )
         self.conn.commit()
+        return last_order  # <-- hozir create_order order id qaytaradi
 
     def get_user_orders(self, user_id):
         self.cur.execute(
@@ -85,9 +85,58 @@ class Database:
         self.cur.execute(
             """select order_product.*, product.name_uz as product_name_uz, product.name_ru as product_name_ru, 
             product.price as product_price from order_product inner join product on order_product.product_id = product.id
-            where order_id = ?""", (order_id, ))
+            where order_id = ?""", (order_id,))
         products = dict_fetchall(self.cur)
         return products
+
+    # Yangi: order_payment jadvali qo'shish va yozish funksiyalari
+    def ensure_order_payment_table(self):
+        self.cur.execute("""
+            CREATE TABLE IF NOT EXISTS order_payment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER,
+                method INTEGER,
+                card_number TEXT,
+                receipt_file_id TEXT,
+                status INTEGER,
+                created_at TEXT
+            )
+        """)
+        self.conn.commit()
+
+    def add_order_payment(self, order_id, method, card_number=None, receipt_file_id=None, status=0):
+        # status: 0 = pending, 1 = accepted, 2 = rejected (admin)
+        self.ensure_order_payment_table()
+        self.cur.execute(
+            """insert into order_payment(order_id, method, card_number, receipt_file_id, status, created_at)
+               values (?, ?, ?, ?, ?, ?)""",
+            (order_id, method, card_number, receipt_file_id, status, datetime.now())
+        )
+        self.conn.commit()
+
+    # Yangi: mahsulot qo'shish va o'chirish funksiyalari
+    def add_product(self, category_id, name_uz, name_ru, description_uz, description_ru, price, image_path=None):
+        self.cur.execute(
+            """insert into product(category_id, name_uz, name_ru, description_uz, description_ru, price, image, created_at)
+               values (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (category_id, name_uz, name_ru, description_uz, description_ru, price, image_path, datetime.now())
+        )
+        self.conn.commit()
+        self.cur.execute("""select last_insert_rowid() as id""")
+        res = dict_fetchone(self.cur)
+        return res['id'] if res else None
+
+    def delete_product(self, product_id):
+        self.cur.execute("""delete from product where id = ?""", (product_id,))
+        self.conn.commit()
+
+    def get_order_by_id(self, order_id):
+        self.cur.execute("""select * from "order" where id = ?""", (order_id,))
+        return dict_fetchone(self.cur)
+
+    def update_order_status(self, order_id, status):
+        self.cur.execute("""update "order" set status = ? where id = ?""", (status, order_id))
+        self.conn.commit()
 
 ##############################
 
